@@ -6,7 +6,10 @@ import { useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import toast from "react-hot-toast";
-import { registerSchema, type RegisterInput } from "@/lib/validations/auth";
+import {
+  registerFormSchema,
+  type RegisterFormInput,
+} from "@/lib/validations/auth";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { Label } from "@/components/ui/Label";
@@ -22,12 +25,17 @@ export function RegisterForm() {
     handleSubmit,
     setError,
     formState: { errors, isSubmitting },
-  } = useForm<RegisterInput>({
-    resolver: zodResolver(registerSchema),
-    defaultValues: { email: "", password: "", name: "" },
+  } = useForm<RegisterFormInput>({
+    resolver: zodResolver(registerFormSchema),
+    defaultValues: {
+      email: "",
+      password: "",
+      confirmPassword: "",
+      name: "",
+    },
   });
 
-  async function onSubmit(data: RegisterInput) {
+  async function onSubmit(data: RegisterFormInput) {
     setServerError(null);
 
     const res = await fetch("/api/register", {
@@ -89,6 +97,19 @@ export function RegisterForm() {
         />
         {errors.password && <FieldError>{errors.password.message}</FieldError>}
         <p className="text-xs text-muted-foreground">至少 8 位字符</p>
+      </div>
+
+      <div className="space-y-2">
+        <Label htmlFor="reg-confirm-password">确认密码</Label>
+        <Input
+          id="reg-confirm-password"
+          type="password"
+          autoComplete="new-password"
+          {...register("confirmPassword")}
+        />
+        {errors.confirmPassword && (
+          <FieldError>{errors.confirmPassword.message}</FieldError>
+        )}
       </div>
 
       <Button type="submit" className="w-full" loading={isSubmitting} size="lg">

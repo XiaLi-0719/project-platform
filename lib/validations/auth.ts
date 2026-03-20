@@ -30,3 +30,17 @@ export const loginSchema = z.object({
 
 export type RegisterInput = z.infer<typeof registerSchema>;
 export type LoginInput = z.infer<typeof loginSchema>;
+
+/** 注册页表单（含确认密码，不提交到 API） */
+export const registerFormSchema = registerSchema
+  .extend({
+    confirmPassword: z
+      .string({ required_error: "请再次输入密码" })
+      .min(1, "请再次输入密码"),
+  })
+  .refine((data) => data.password === data.confirmPassword, {
+    message: "两次密码不一致",
+    path: ["confirmPassword"],
+  });
+
+export type RegisterFormInput = z.infer<typeof registerFormSchema>;

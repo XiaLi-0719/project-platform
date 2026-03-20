@@ -4,6 +4,7 @@ import { useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { signIn } from "next-auth/react";
+import toast from "react-hot-toast";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { loginSchema, type LoginInput } from "@/lib/validations/auth";
@@ -20,7 +21,7 @@ export function LoginForm() {
   const safeCallback =
     callbackUrl && callbackUrl.startsWith("/") && !callbackUrl.startsWith("//")
       ? callbackUrl
-      : "/";
+      : "/dashboard";
 
   const [serverError, setServerError] = useState<string | null>(null);
 
@@ -46,6 +47,7 @@ export function LoginForm() {
       return;
     }
 
+    toast.success("登录成功");
     router.push(safeCallback);
     router.refresh();
   }
