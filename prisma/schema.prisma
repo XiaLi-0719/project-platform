@@ -1,0 +1,435 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id           String    @id @default(cuid())
+  email        String    @unique
+  password     String
+  name         String
+  avatar       String?
+  role         Role      @default(USER)
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  ownedTeams        Team[]             @relation("TeamOwner")
+  members           Member[]
+  teamMembers       TeamMember[]
+  subTeamMembers    SubTeamMember[]
+  assignedTasks     Task[]             @relation("Assignee")
+  createdTasks      Task[]             @relation("Creator")
+  documents         Document[]
+  documentVersions  DocumentVersion[]
+  certificates      Certificate[]
+  approvalsApprover Approval[]         @relation("Approver")
+  approvalsNext     Approval[]         @relation("NextApprover")
+  templates         Template[]
+  meetingsCreated   Meeting[]
+  meetingAttendees  MeetingAttendee[]
+  notifications     Notification[]
+
+  flowNodeAssignees   ApprovalFlowNodeAssignee[] @relation("FlowAssignee")
+  approvalSubmissions DocumentApprovalInstance[]   @relation("ApprovalSubmitter")
+  approvalTasks       ApprovalTask[]             @relation("ApprovalTaskUser")
+}
+
+model Team {
+  id          String   @id @default(cuid())
+  name        String
+  projectId   String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  ownerId     String
+  owner       User     @relation("TeamOwner", fields: [ownerId], references: [id])
+  project     Project  @relation(fields: [projectId], references: [id])
+  teamMembers TeamMember[]
+  subTeams    SubTeam[]
+}
+
+model Project {
+  id          String   @id @default(cuid())
+  name        String
+  number      String   @unique
+  description String?
+  status      ProjectStatus @default(ACTIVE)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  teams       Team[]
+  subTeams    SubTeam[]
+  tasks       Task[]
+  documents   Document[]
+  members     Member[]
+  meetings    Meeting[]
+
+  approvalFlow      ApprovalFlow?
+  approvalInstances DocumentApprovalInstance[]
+}
+
+model SubTeam {
+  id          String   @id @default(cuid())
+  name        String
+  phase       String
+  projectId   String
+  teamId      String
+  createdAt   DateTime @default(now())
+  
+  project     Project  @relation(fields: [projectId], references: [id])
+  team        Team     @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  subTeamMembers SubTeamMember[]
+  tasks       Task[]
+}
+
+/// 项目级成员（每个用户每个项目一条）：参与项目的「门票」，与具体团队无关
+model Member {
+  id          String   @id @default(cuid())
+  userId      String
+  projectId   String
+  role        String   @default("member")
+  permissions Json     @default("[]")
+
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  project     Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, projectId])
+}
+
+/// 主团队成员：同一用户可同时属于多个团队
+model TeamMember {
+  id        String   @id @default(cuid())
+  teamId    String
+  userId    String
+  role      String   @default("readonly")
+  createdAt DateTime @default(now())
+
+  team      Team     @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([teamId, userId])
+  @@index([userId])
+}
+
+/// 子团队成员：与主团队独立计数，同一用户可同时属于多个子团队
+model SubTeamMember {
+  id         String   @id @default(cuid())
+  subTeamId  String
+  userId     String
+  role       String   @default("readonly")
+  createdAt  DateTime @default(now())
+
+  subTeam    SubTeam  @relation(fields: [subTeamId], references: [id], onDelete: Cascade)
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([subTeamId, userId])
+  @@index([userId])
+}
+
+model Task {
+  id          String   @id @default(cuid())
+  title       String
+  description String?
+  status      TaskStatus @default(PENDING)
+  priority    Priority? @default(MEDIUM)
+  startDate   DateTime?
+  endDate     DateTime?
+  completedAt DateTime?
+  
+  projectId   String
+  subTeamId   String?
+  assigneeId  String
+  createdById String
+  parentTaskId String? // 前置任务ID
+  
+  project     Project  @relation(fields: [projectId], references: [id])
+  subTeam     SubTeam? @relation(fields: [subTeamId], references: [id])
+  assignee    User     @relation("Assignee", fields: [assigneeId], references: [id])
+  createdBy   User     @relation("Creator", fields: [createdById], references: [id])
+  parentTask  Task?    @relation("TaskHierarchy", fields: [parentTaskId], references: [id])
+  subtasks    Task[]   @relation("TaskHierarchy")
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model Document {
+  id          String   @id @default(cuid())
+  title       String
+  number      String   @unique
+  content     String?
+  filePath    String?
+  fileType    String?
+  status      DocumentStatus @default(DRAFT)
+  version     String   @default("1.0.0")
+  
+  projectId   String
+  createdById String
+  templateId  String?
+  
+  project     Project   @relation(fields: [projectId], references: [id])
+  createdBy   User      @relation(fields: [createdById], references: [id])
+  template    Template? @relation(fields: [templateId], references: [id], onDelete: SetNull)
+  
+  versions    DocumentVersion[]
+  approvals   Approval[]
+  approvalInstances DocumentApprovalInstance[]
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model DocumentVersion {
+  id          String   @id @default(cuid())
+  version     String
+  content     String
+  changeLog   String?
+  
+  documentId  String
+  createdById String
+  
+  document    Document @relation(fields: [documentId], references: [id])
+  createdBy   User     @relation(fields: [createdById], references: [id])
+  
+  createdAt   DateTime @default(now())
+}
+
+model Approval {
+  id          String   @id @default(cuid())
+  type        ApprovalType
+  status      ApprovalStatus @default(PENDING)
+  comments    String?
+  
+  documentId  String
+  approverId  String
+  nextApproverId String?
+  
+  document    Document @relation(fields: [documentId], references: [id])
+  approver    User     @relation("Approver", fields: [approverId], references: [id])
+  nextApprover User?   @relation("NextApprover", fields: [nextApproverId], references: [id])
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  respondedAt DateTime?
+}
+
+/// 项目级审批流（节点：起草→审核→批准→发布 等，可配置）
+model ApprovalFlow {
+  id        String   @id @default(cuid())
+  projectId String   @unique
+  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  nodes     ApprovalFlowNode[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+enum ApprovalNodeMode {
+  COUNTERSIGN // 会签：全员通过
+  SEQUENTIAL  // 逐级：按顺序一人通过后再下一人
+  OR_SIGN     // 或签：任一人通过即可
+}
+
+model ApprovalFlowNode {
+  id        String           @id @default(cuid())
+  flowId    String
+  sortOrder Int
+  stepType  ApprovalType
+  name      String
+  mode      ApprovalNodeMode @default(OR_SIGN)
+  flow      ApprovalFlow     @relation(fields: [flowId], references: [id], onDelete: Cascade)
+  assignees ApprovalFlowNodeAssignee[]
+  tasks     ApprovalTask[]
+
+  @@index([flowId])
+}
+
+model ApprovalFlowNodeAssignee {
+  id        String           @id @default(cuid())
+  nodeId    String
+  userId    String
+  sortOrder Int              @default(0)
+  node      ApprovalFlowNode @relation(fields: [nodeId], references: [id], onDelete: Cascade)
+  user      User             @relation("FlowAssignee", fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([nodeId, userId])
+}
+
+enum DocumentApprovalState {
+  IN_PROGRESS
+  APPROVED
+  REJECTED
+  CANCELLED
+}
+
+/// 文档一次审批实例
+model DocumentApprovalInstance {
+  id            String                @id @default(cuid())
+  documentId    String
+  projectId     String
+  submitterId   String
+  status        DocumentApprovalState @default(IN_PROGRESS)
+  currentNodeId String?
+  createdAt     DateTime              @default(now())
+  updatedAt     DateTime              @updatedAt
+
+  document  Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  submitter User     @relation("ApprovalSubmitter", fields: [submitterId], references: [id])
+
+  tasks ApprovalTask[]
+
+  @@index([documentId, status])
+  @@index([projectId])
+  @@index([submitterId])
+}
+
+/// 待办任务（到具体审批人）
+model ApprovalTask {
+  id          String         @id @default(cuid())
+  instanceId  String
+  nodeId      String
+  userId      String
+  status      ApprovalStatus @default(PENDING)
+  comments    String?
+  createdAt   DateTime       @default(now())
+  respondedAt DateTime?
+
+  instance DocumentApprovalInstance @relation(fields: [instanceId], references: [id], onDelete: Cascade)
+  node     ApprovalFlowNode         @relation(fields: [nodeId], references: [id], onDelete: Cascade)
+  user     User                     @relation("ApprovalTaskUser", fields: [userId], references: [id])
+
+  @@index([userId, status])
+  @@index([instanceId])
+}
+
+model Template {
+  id          String   @id @default(cuid())
+  name        String
+  type        String
+  content     String
+  version     String   @default("1.0.0")
+  
+  createdById String
+  createdBy   User     @relation(fields: [createdById], references: [id])
+  
+  documents   Document[]
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model Certificate {
+  id          String   @id @default(cuid())
+  name        String
+  number      String   @unique
+  type        String   @default("GCP")
+  issueDate   DateTime
+  expiryDate  DateTime
+  filePath    String?
+  fileType    String?
+  
+  userId      String
+  user        User     @relation(fields: [userId], references: [id])
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model Meeting {
+  id          String   @id @default(cuid())
+  title       String
+  description String?
+  startTime   DateTime
+  endTime     DateTime
+  audioUrl    String?
+  transcript  String?
+  summary     String?
+  
+  projectId   String
+  createdById String
+  
+  project     Project  @relation(fields: [projectId], references: [id])
+  createdBy   User     @relation(fields: [createdById], references: [id])
+  
+  attendees   MeetingAttendee[]
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model MeetingAttendee {
+  id          String   @id @default(cuid())
+  meetingId   String
+  userId      String
+  
+  meeting     Meeting  @relation(fields: [meetingId], references: [id], onDelete: Cascade)
+  user        User     @relation(fields: [userId], references: [id])
+  
+  @@unique([meetingId, userId])
+}
+
+model Notification {
+  id          String   @id @default(cuid())
+  title       String
+  content     String
+  type        String
+  read        Boolean  @default(false)
+  
+  userId      String
+  user        User     @relation(fields: [userId], references: [id])
+  
+  createdAt   DateTime @default(now())
+}
+
+enum Role {
+  ADMIN
+  USER
+  MANAGER
+}
+
+enum ProjectStatus {
+  ACTIVE
+  COMPLETED
+  ON_HOLD
+}
+
+enum TaskStatus {
+  PENDING
+  IN_PROGRESS
+  COMPLETED
+  BLOCKED
+}
+
+enum Priority {
+  LOW
+  MEDIUM
+  HIGH
+  URGENT
+}
+
+enum DocumentStatus {
+  DRAFT
+  REVIEWING
+  APPROVED
+  EFFECTIVE
+  OBSOLETE
+  ARCHIVED
+}
+
+enum ApprovalType {
+  DRAFT
+  REVIEW
+  APPROVE
+  PUBLISH
+}
+
+enum ApprovalStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  COUNTERSIGN
+}
